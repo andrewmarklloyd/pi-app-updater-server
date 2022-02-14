@@ -44,6 +44,8 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fmt.Println(fmt.Sprintf("Received new artifact published event for repository %s", updaterPayload.Repository))
+
 	url, err := processDeployMessage(updaterPayload)
 	if err != nil {
 		http.Error(w, "Error parsing request", http.StatusBadRequest)
@@ -51,7 +53,7 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	updaterPayload.ArchiveDownloadURL = url
 	json, _ := json.Marshal(updaterPayload)
-	// fmt.Fprintf(w, fmt.Sprintf(`{"messages":%s,"numPages":%d}`, string(json), numPages))
+
 	messageClient.PublishPushTopic(string(json))
 
 	fmt.Fprintf(w, "{\"status\":\"success\"}")
@@ -69,7 +71,6 @@ func getDownloadURLWithRetries(updaterPayload UpdaterPayload) (string, error) {
 	var err error
 	var url string
 	for _, backoff := range backoffSchedule {
-		fmt.Println("trying to get download url")
 		url, err = getDownloadURL(updaterPayload)
 		if url != "" {
 			return url, nil
@@ -128,7 +129,16 @@ func main() {
 	addr := fmt.Sprintf("mqtt://%s:%s@%s", user, pw, url)
 
 	messageClient = newMQTTClient(addr)
+	messageClient.SubscribePushTopic(func(message string) {
+		var payload UpdaterPayload
+		err := json.Unmarshal([]byte(message), &payload)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println(fmt.Sprintf("Received message on topic %s: %s", pushTopic, payload))
+		}
 
+	})
 	// todo: add auth
 	http.HandleFunc("/push", handleWebhook)
 	log.Println("server started on ", srvAddr)
