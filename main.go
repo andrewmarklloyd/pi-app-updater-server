@@ -20,10 +20,13 @@ var backoffSchedule = []time.Duration{
 	60 * time.Second,
 }
 
+var messageClient mqttClient
+
 type UpdaterPayload struct {
-	SHA        string `json:"sha"`
-	Repository string `json:"repository"`
-	Artifact   string `json:"artifact"`
+	SHA                string `json:"sha"`
+	Repository         string `json:"repository"`
+	ArtifactName       string `json:"artifact_name"`
+	ArchiveDownloadURL string `json:"archive_download_url"`
 }
 
 func handleWebhook(w http.ResponseWriter, r *http.Request) {
@@ -41,22 +44,25 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = processDeployMessage(updaterPayload)
+	url, err := processDeployMessage(updaterPayload)
 	if err != nil {
 		http.Error(w, "Error parsing request", http.StatusBadRequest)
 		return
 	}
+	updaterPayload.ArchiveDownloadURL = url
+	json, _ := json.Marshal(updaterPayload)
+	// fmt.Fprintf(w, fmt.Sprintf(`{"messages":%s,"numPages":%d}`, string(json), numPages))
+	messageClient.PublishPushTopic(string(json))
 
 	fmt.Fprintf(w, "{\"status\":\"success\"}")
 }
 
-func processDeployMessage(up UpdaterPayload) error {
+func processDeployMessage(up UpdaterPayload) (string, error) {
 	url, err := getDownloadURLWithRetries(up)
 	if err != nil {
-		return err
+		return "", err
 	}
-	fmt.Println(url)
-	return nil
+	return url, nil
 }
 
 func getDownloadURLWithRetries(updaterPayload UpdaterPayload) (string, error) {
@@ -103,18 +109,28 @@ func getDownloadURL(updaterPayload UpdaterPayload) (string, error) {
 	}
 
 	for _, a := range artifacts.Artifacts {
-		if updaterPayload.Artifact == a.GetName() {
+		if updaterPayload.ArtifactName == a.GetName() {
 			return a.GetArchiveDownloadURL(), nil
 		}
 	}
 
-	return "", fmt.Errorf("no artifact found for %s", updaterPayload.Artifact)
+	return "", fmt.Errorf("no artifact found for %s", updaterPayload.ArtifactName)
 }
 
 func main() {
 	srvAddr := fmt.Sprintf("0.0.0.0:%s", os.Getenv("PORT"))
-	log.Println("server started on ", srvAddr)
+
+	// TODO: reusing another app's mqtt instance to save cost. Once viable MVP finished I can provision a dedicated instance
+	// TODO: read/write user is fine for this app, but clients will need read only
+	user := os.Getenv("CLOUDMQTT_USER")
+	pw := os.Getenv("CLOUDMQTT_PASSWORD")
+	url := os.Getenv("CLOUDMQTT_URL")
+	addr := fmt.Sprintf("mqtt://%s:%s@%s", user, pw, url)
+
+	messageClient = newMQTTClient(addr)
+
 	// todo: add auth
 	http.HandleFunc("/push", handleWebhook)
+	log.Println("server started on ", srvAddr)
 	log.Fatal(http.ListenAndServe(srvAddr, nil))
 }
