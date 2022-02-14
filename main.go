@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	gmux "github.com/gorilla/mux"
+
 	"github.com/google/go-github/v42/github"
 )
 
@@ -126,9 +128,9 @@ func main() {
 	user := os.Getenv("CLOUDMQTT_USER")
 	pw := os.Getenv("CLOUDMQTT_PASSWORD")
 	url := os.Getenv("CLOUDMQTT_URL")
-	addr := fmt.Sprintf("mqtt://%s:%s@%s", user, pw, url)
+	mqttAddr := fmt.Sprintf("mqtt://%s:%s@%s", user, pw, url)
 
-	messageClient = newMQTTClient(addr)
+	messageClient = newMQTTClient(mqttAddr)
 	messageClient.SubscribePushTopic(func(message string) {
 		var payload UpdaterPayload
 		err := json.Unmarshal([]byte(message), &payload)
@@ -139,8 +141,38 @@ func main() {
 		}
 
 	})
-	// todo: add auth
-	http.HandleFunc("/push", handleWebhook)
+
+	router := gmux.NewRouter().StrictSlash(true)
+	router.Handle("/push", requireLogin(http.HandlerFunc(handleWebhook))).Methods("POST")
+
+	srv := &http.Server{
+		Handler: router,
+		Addr:    srvAddr,
+	}
+
 	log.Println("server started on ", srvAddr)
-	log.Fatal(http.ListenAndServe(srvAddr, nil))
+	logger.Fatal(srv.ListenAndServe())
+}
+
+func requireLogin(next http.Handler) http.Handler {
+	fn := func(w http.ResponseWriter, req *http.Request) {
+		if !isAuthenticated(req) {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, req)
+	}
+	return http.HandlerFunc(fn)
+}
+
+func isAuthenticated(req *http.Request) bool {
+	// allowedApiKey := os.Getenv("API_KEY")
+	// apiKey := req.Header.Get("api-key")
+	// if apiKey == "" {
+	// 	return false
+	// }
+	// if apiKey != allowedApiKey {
+	// 	return false
+	// }
+	return true
 }
