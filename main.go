@@ -46,6 +46,12 @@ func handleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if updaterPayload.Repository == "" || updaterPayload.ArtifactName == "" || updaterPayload.SHA == "" {
+		fmt.Println("empty field(s) found in payload:", updaterPayload)
+		http.Error(w, "Error parsing request", http.StatusBadRequest)
+		return
+	}
+
 	fmt.Println(fmt.Sprintf("Received new artifact published event for repository %s", updaterPayload.Repository))
 
 	url, err := processDeployMessage(updaterPayload)
@@ -157,6 +163,7 @@ func main() {
 func requireLogin(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, req *http.Request) {
 		if !isAuthenticated(req) {
+			fmt.Print("unauthenticated request", req.Header)
 			http.Error(w, "", http.StatusUnauthorized)
 			return
 		}
@@ -166,13 +173,13 @@ func requireLogin(next http.Handler) http.Handler {
 }
 
 func isAuthenticated(req *http.Request) bool {
-	// allowedApiKey := os.Getenv("API_KEY")
-	// apiKey := req.Header.Get("api-key")
-	// if apiKey == "" {
-	// 	return false
-	// }
-	// if apiKey != allowedApiKey {
-	// 	return false
-	// }
+	allowedApiKey := os.Getenv("PI_APP_UPDATER_API_KEY")
+	apiKey := req.Header.Get("api-key")
+	if apiKey == "" {
+		return false
+	}
+	if apiKey != allowedApiKey {
+		return false
+	}
 	return true
 }
