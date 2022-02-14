@@ -1,0 +1,15 @@
+{
+  "name": "Pi App Updater Server",
+  "description": "Reacts to Github push events to trigger updates to Raspberry pi apps",
+  "keywords": [
+    "raspberry-pi",
+    "golang"
+  ],
+  "repository": "https://github.com/andrewmarklloyd/pi-app-updater-server",
+  "env": {
+    "GOVERSION": {
+      "description": "Heroku does not support setting go version in go.mod",
+      "value": "1.16.3"
+    }
+  }
+}
